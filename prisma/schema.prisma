@@ -1,0 +1,200 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Office {
+  id                String            @id @default(cuid())
+  name              String            @default("مكتب استيراد السيارات")
+  phone             String            @default("0910000000")
+  address           String            @default("طرابلس - ليبيا")
+  logoUrl           String?
+  primaryColor      String            @default("#0270c7")
+  defaultCommission Float             @default(500.0) // بالدولار
+  exchangeRate      Float             @default(7.10)  // سعر صرف الدولار بالدينار الليبي
+  defaultPort       String            @default("ميناء الخمس")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  users             User[]
+  clients           Client[]
+  orders            Order[]
+  vehicles          Vehicle[]
+  financialRecords  FinancialRecord[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  phone        String    @unique
+  name         String
+  passwordHash String
+  role         String    @default("STAFF") // "ADMIN" | "STAFF"
+  isActive     Boolean   @default(true)
+  officeId     String
+  office       Office    @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Client {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String
+  whatsapp  String?
+  city      String?   @default("طرابلس")
+  notes     String?
+  officeId  String
+  office    Office    @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  orders    Order[]
+}
+
+model Order {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  officeId    String
+  office      Office    @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  status      String    @default("ACTIVE") // "ACTIVE" | "COMPLETED" | "CANCELLED"
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  vehicles    Vehicle[]
+}
+
+model Vehicle {
+  id                 String             @id @default(cuid())
+  orderId            String
+  order              Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  officeId           String
+  office             Office             @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  
+  // بيانات المزاد والهيكل
+  lotNumber          String
+  vin                String?
+  auctionName        String             @default("Copart") // Copart, IAA, Other
+  auctionUrl         String?
+  mainImageUrl       String?
+  
+  // مواصفات السيارة
+  make               String             // مثل: Toyota
+  model              String             // مثل: Camry
+  year               Int                // مثل: 2022
+  bodyClass          String?            // مثل: Sedan, SUV
+  engine             String?            // مثل: 2.5L 4 Cyl
+  driveType          String?            // مثل: FWD, AWD
+  color              String?
+  mileage            Int?               // العداد بالأميال
+  
+  // حالة السيارة في المزاد
+  primaryDamage      String?            // ضرر أمامي، خلفي، غرق، الخ
+  secondaryDamage    String?
+  conditionHighlight String?            // Run and Drive, Starts, Stationary
+  titleType          String?            // Clean, Salvage, Rebuilt, Bill of Sale
+  
+  // حالة المعاملة والمزايدة
+  status             String             @default("PENDING_APPROVAL")
+  // الحالات:
+  // DRAFT, PENDING_APPROVAL, APPROVED, BID_PLACED, WON, LOST, 
+  // PAID, PICKED_UP, IN_TRANSIT_US, AT_PORT_US, SHIPPED, 
+  // ARRIVED_DEST, CUSTOMS, READY_DELIVERY, DELIVERED
+  
+  // الأرقام المالية التقديرية
+  estPurchasePrice   Float?             @default(0)
+  estAuctionFees     Float?             @default(0)
+  estTowingFee       Float?             @default(0)
+  estShippingFee     Float?             @default(0)
+  estCustomsFee      Float?             @default(0)
+  estCommission      Float?             @default(500)
+  estTotal           Float?             @default(0)
+  maxBidApproved     Float?             @default(0)
+  approvalNote       String?
+  approvalDate       DateTime?
+  
+  // الأرقام الفعلية بعد الرسو
+  actualPurchasePrice Float?            @default(0)
+  auctionInvoiceNum  String?
+  paymentDueDate     DateTime?
+  
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  shippingDetail     ShippingDetail?
+  financialRecords   FinancialRecord[]
+  documents          Document[]
+  statusLogs         StatusLog[]
+}
+
+model ShippingDetail {
+  id               String    @id @default(cuid())
+  vehicleId        String    @unique
+  vehicle          Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  
+  auctionState     String?   // الولاية الأمريكية (TX, CA, FL, GA...)
+  auctionYard      String?   // اسم ساحة المزاد
+  towingCompany    String?   // شركة النقل الداخلي
+  pickupDate       DateTime? // تاريخ سحب السيارة من الساحة
+  portArrivalDate  DateTime? // تاريخ وصول السيارة للميناء الأمريكي
+  
+  originPort       String?   @default("Savannah") // ميناء الشحن في أمريكا
+  destinationPort  String?   @default("ميناء الخمس") // ميناء الوصول (الخمس، بنغازي، مصراتة...)
+  shippingCompany  String?   // الخط الملاحي (Grimaldi, Maersk, MSC, Sallaum...)
+  bookingNumber    String?
+  containerNumber  String?   // رقم الحاوية
+  billOfLading     String?   // رقم البوليصة
+  departureDate    DateTime? // تاريخ الإبحار
+  eta              DateTime? // تاريخ الوصول المتوقع
+  trackingUrl      String?   // رابط تتبع الشحنة
+  customsBroker    String?   // المخلص الجمركي
+  deliveryDate     DateTime? // تاريخ التسليم الفعلي للزبون
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model FinancialRecord {
+  id             String    @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  officeId       String
+  office         Office    @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  
+  type           String    // CLIENT_PAYMENT, AUCTION_PAYMENT, TOWING_FEE, SHIPPING_FEE, CUSTOMS_FEE, OFFICE_COMMISSION, OTHER_EXPENSE, REFUND
+  amount         Float     // المبلغ
+  currency       String    @default("USD") // USD أو LYD
+  exchangeRate   Float     @default(1.0)
+  receiptNumber  String?
+  note           String?
+  recordedBy     String?
+  entryDate      DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+}
+
+model Document {
+  id         String    @id @default(cuid())
+  vehicleId  String
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  name       String
+  fileUrl    String
+  docType    String    @default("OTHER") // INVOICE, RECEIPT, BILL_OF_LADING, TITLE, OTHER
+  uploadedBy String?
+  uploadedAt DateTime  @default(now())
+}
+
+model StatusLog {
+  id         String    @id @default(cuid())
+  vehicleId  String
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  oldStatus  String?
+  newStatus  String
+  note       String?
+  changedBy  String?
+  createdAt  DateTime  @default(now())
+}
